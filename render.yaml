@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: tlou-anadolu-bot
+    env: python
+    region: frankfurt  # EU bölgesi - Türkiye'ye en yakın
+    plan: free  # ücretsiz plan
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # BOT_TOKEN ve GUILD_ID'yi Render panelinden manuel ekleyeceksin (gizli)
+      - key: BOT_TOKEN
+        sync: false  # gizli - Render panelinden eklenecek
+      - key: GUILD_ID
+        value: "1470543732033191986"
