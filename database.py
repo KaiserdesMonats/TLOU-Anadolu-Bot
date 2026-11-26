@@ -1073,6 +1073,8 @@ class Database:
         """Admin komutuyla karakter sifirlama. Iki asamali onay sisteminden sonra cagrilir."""
         async with self._lock:
             await self._conn.execute("DELETE FROM inventory WHERE user_id=?", (user_id,))
+            # FIX: Cete uyeligi de silinmeli (onay ekraninda vaat ediliyordu).
+            await self._conn.execute("DELETE FROM gang_members WHERE user_id=?", (user_id,))
             await self._conn.execute(
                 """UPDATE users SET
                     isim=NULL, soyisim=NULL, yas=NULL, sehir=NULL, meslek=NULL,
@@ -1084,8 +1086,11 @@ class Database:
                 (user_id,)
             )
             await self._conn.commit()
-            await self.add_action_log('admin', None, user_id, 'karakter_sifirla', {})
-            return True
+        # FIX: add_action_log kendi icinde lock aliyor; lock icinden
+        # cagirilinca asyncio.Lock reentrant olmadigi icin butun bot
+        # DB islemleri sonsuza kadar bekliyordu (deadlock).
+        await self.add_action_log('admin', None, user_id, 'karakter_sifirla', {})
+        return True
 
     async def permanently_delete_character(self, user_id: int):
         """3 gunluk karantina sonrasi karakteri gercekten sil.

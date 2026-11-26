@@ -160,12 +160,15 @@ class TasksCog(commands.Cog):
 
                 if yeni_seviye > seviye:
                     # Asama atlandi - kullaniciya ve log'a bildiri
-                    await db.set_enfeksiyon(user_id, toplam_sure - gecen, yeni_seviye)
-                    # Baslangic zamanini guncelle (kalan sureyi baz al)
+                    # FIX: Sadece seviye guncellenir; enfeksiyon_baslangic ve
+                    # toplam sure sabit kaliyor. Eski kod baslangici her
+                    # asamada sifirladigi icin gecen sure sifirdan sayiliyor
+                    # ve (gecen // asama_suresi) + 1 hesabi 3. asamadan
+                    # sonrasini hic tetiklemiyordu.
                     async with db._lock:
                         await db._conn.execute(
-                            "UPDATE users SET enfeksiyon_baslangic=? WHERE user_id=?",
-                            (now, user_id),
+                            "UPDATE users SET enfeksiyon_seviye=? WHERE user_id=?",
+                            (yeni_seviye, user_id),
                         )
                         await db._conn.commit()
 
@@ -598,37 +601,6 @@ class TasksCog(commands.Cog):
 # ==================================================================
 # SETUP
 # ==================================================================
-    async def _send(self, ctx: commands.Context, embed=None, content=None,
-                     view=None, ephemeral=True):
-        """Prefix/slash farkı gözetmeksizin mesaj gönder.
-        'uygulama cevap vermedi' hatasını önler.
-        """
-        try:
-            if ctx.interaction:
-                if ctx.interaction.response.is_done():
-                    if content:
-                        await ctx.interaction.followup.send(content, embed=embed, view=view, ephemeral=ephemeral)
-                    else:
-                        await ctx.interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
-                else:
-                    if content:
-                        await ctx.interaction.response.send_message(content, embed=embed, view=view, ephemeral=ephemeral)
-                    else:
-                        await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
-            else:
-                if content:
-                    await self._send(ctx, content, embed=embed, view=view)
-                else:
-                    await self._send(ctx, embed=embed, view=view)
-        except Exception as e:
-            logger.error(f"Mesaj gönderme hatası: {e}")
-            try:
-                if content:
-                    await self._send(ctx, content, embed=embed, view=view)
-                else:
-                    await self._send(ctx, embed=embed, view=view)
-            except Exception:
-                pass
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TasksCog(bot))

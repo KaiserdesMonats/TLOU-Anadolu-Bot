@@ -44,7 +44,12 @@ class PerkSecimView(discord.ui.View):
         self.cete_turu = cete_turu
         self.secili_perkler = set()
 
-        # Tum perkleri buton olarak ekle (her turde 9 adet, 3x3 grid)
+        # Tum perkleri buton olarak ekle.
+        # FIX: Discord bir satira en fazla 5 buton alir; eski kod tum
+        # butonlari row=0'a koydugu icin 7-9 butonlu menu Discord API
+        # hatasi (Invalid Form Body) veriyordu. Butonlar otomatik
+        # satirlara dagitiliyor (5'erli), onay butonu en alt satirda.
+        perk_index = 0
         for perk_id, perk_bilgi in CETE_PERKLERI.items():
             # Tur filtresi
             if cete_turu == "Normal Çete" and "Tarikat Özel" in perk_bilgi['isim']:
@@ -58,8 +63,9 @@ class PerkSecimView(discord.ui.View):
                 label=perk_bilgi['isim'][:70],
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"perk_{perk_id}",
-                row=0
+                row=min(perk_index // 5, 4),
             )
+            perk_index += 1
             btn.callback = self._perk_callback
             self.add_item(btn)
 
@@ -1064,16 +1070,16 @@ class CeteCog(commands.Cog):
                         await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
             else:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
             try:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
             except Exception:
                 pass
 

@@ -688,16 +688,16 @@ class EventCog(EventBaseCog):
                         await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
             else:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
             try:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
             except Exception:
                 pass
 

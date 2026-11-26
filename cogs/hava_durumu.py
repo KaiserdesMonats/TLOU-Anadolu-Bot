@@ -77,8 +77,11 @@ class HavaDurumuCog(commands.Cog):
         """
         now = datetime.now(TZ_ISTANBUL)
 
-        # Sadece 21:00'da calisir
-        if now.hour != config.HAVA_DURUMU_SAATI or now.minute != 0:
+        # 21:00 - 21:04 arasinda calisir.
+        # FIX: Eski kod sadece 21:00 dakikasinda calisiyordu; bot o dakika
+        # mesgul/restart ise gunluk hava durumu tamamen kaciyordu.
+        # Gunluk tarih kontrolu cift gonderimi engeller.
+        if now.hour != config.HAVA_DURUMU_SAATI or now.minute >= 5:
             return
 
         # Bugun hava durumu zaten atildi mi kontrol et
@@ -339,16 +342,16 @@ class HavaDurumuCog(commands.Cog):
                         await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
             else:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
             try:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
             except Exception:
                 pass
 

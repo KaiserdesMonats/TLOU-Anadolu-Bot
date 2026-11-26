@@ -581,16 +581,16 @@ class KayitCog(commands.Cog):
                         await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
             else:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
             try:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
             except Exception:
                 pass
 
@@ -598,37 +598,6 @@ class KayitCog(commands.Cog):
 # ==================================================================
 # SETUP
 # ==================================================================
-    async def _send(self, ctx: commands.Context, embed=None, content=None,
-                     view=None, ephemeral=True):
-        """Prefix/slash farkı gözetmeksizin mesaj gönder.
-        'uygulama cevap vermedi' hatasını önler.
-        """
-        try:
-            if ctx.interaction:
-                if ctx.interaction.response.is_done():
-                    if content:
-                        await ctx.interaction.followup.send(content, embed=embed, view=view, ephemeral=ephemeral)
-                    else:
-                        await ctx.interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
-                else:
-                    if content:
-                        await ctx.interaction.response.send_message(content, embed=embed, view=view, ephemeral=ephemeral)
-                    else:
-                        await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
-            else:
-                if content:
-                    await self._send(ctx, content, embed=embed, view=view)
-                else:
-                    await self._send(ctx, embed=embed, view=view)
-        except Exception as e:
-            logger.error(f"Mesaj gönderme hatası: {e}")
-            try:
-                if content:
-                    await self._send(ctx, content, embed=embed, view=view)
-                else:
-                    await self._send(ctx, embed=embed, view=view)
-            except Exception:
-                pass
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(KayitCog(bot))

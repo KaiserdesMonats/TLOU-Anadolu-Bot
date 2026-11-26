@@ -391,4 +391,4 @@ BOT_DURUM_METNI = "TLOU Anadolu'yu izliyor 👁️"
 BOT_DURUM_TIPI  = "watching"  # watching / playing / listening
 
 # Versiyon
-BOT_VERSIYON = "0.1.0-alpha"
+BOT_VERSIYON = "0.1.1"

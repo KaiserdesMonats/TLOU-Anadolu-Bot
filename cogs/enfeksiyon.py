@@ -736,7 +736,7 @@ class EnfeksiyonCog(commands.Cog):
         # Basari mesaji (hedefe bildirim)
         embed = embeds.warning_embed(
             "🦷 Isirildin!",
-            f"Tarafindan isirildin! **{siddet_ad}** siddetli bir isirma.\n"
+            f"{ctx.author.mention} tarafindan isirildin! **{siddet_ad}** siddetli bir isirma.\n"
             f"Enfeksiyon basladi. Asama: **{baslangic_seviye}/4**\n"
             f"Kalan sure: {format_sure(sure)}\n\n"
             f"⚙️ `/enfeksiyon` ile durumunu kontrol edebilirsin."
@@ -765,16 +765,16 @@ class EnfeksiyonCog(commands.Cog):
                         await ctx.interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
             else:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
             try:
                 if content:
-                    await self._send(ctx, content, embed=embed, view=view)
+                    await ctx.send(content, embed=embed, view=view)
                 else:
-                    await self._send(ctx, embed=embed, view=view)
+                    await ctx.send(embed=embed, view=view)
             except Exception:
                 pass
 
