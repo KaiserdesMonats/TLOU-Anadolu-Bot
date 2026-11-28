@@ -209,6 +209,54 @@ class YagmaCog(commands.Cog):
                 komut_turu, ctx.author.id, False, slot_kapasite
             )
 
+        # ----------------------------------------------------------
+        # UYE BASINA HARAC (v0.2.0 - YENI)
+        # Lider/subay /cete-harac-ayarla ile seviye belirlediyse, uyelerin
+        # yagma/arastir/enfekte-temizle kazancindan yuzde kesilip KENDI
+        # cetelerinin kasasina gider.
+        # ----------------------------------------------------------
+        uye_harac_bilgi = None
+        try:
+            uye_harac = await db.get_member_harac(ctx.author.id)
+            if uye_harac and uye_harac.get('seviye', 0) > 0:
+                sev_bilgi = config.HARAC_SEVIYELERI.get(
+                    uye_harac['seviye'], config.HARAC_SEVIYELERI[0]
+                )
+                uye_oran = sev_bilgi['oran']
+                if uye_oran > 0:
+                    para_haraci = int(kazanım.get('para', 0) * uye_oran)
+                    esya_haraci = None
+                    if kazanım['esyalar']:
+                        secim = kazanım['esyalar'][0]
+                        adet = int(secim['amount'] * uye_oran)
+                        if adet >= 1:
+                            esya_haraci = {'item': secim['item'],
+                                           'amount': adet}
+                            secim['amount'] -= adet
+                            await db.add_gang_item(
+                                uye_harac['gang_id'], secim['item'], adet
+                            )
+                    if para_haraci > 0:
+                        kazanım['para'] -= para_haraci
+                        await db.update_gang_money(
+                            uye_harac['gang_id'], para_haraci
+                        )
+                    if para_haraci > 0 or esya_haraci:
+                        uye_harac_bilgi = {
+                            'para': para_haraci, 'esya': esya_haraci,
+                            'cete_adi': uye_harac['gang_name'],
+                            'sev_ad': sev_bilgi['ad'], 'oran': uye_oran,
+                        }
+                        await db.add_action_log(
+                            'cete_harac', ctx.author.id, None, 'uye_haraci',
+                            {'kaynak': komut_turu, 'para': para_haraci,
+                             'esya': esya_haraci,
+                             'cete_id': uye_harac['gang_id'],
+                             'seviye': uye_harac['seviye']}
+                        )
+        except Exception as e:
+            logger.error(f"uye haraci kesiminde hata: {e}")
+
         # Kazanimlari uygula
         uygulanan_esyalar = []
         for e in kazanım['esyalar']:
@@ -264,6 +312,29 @@ class YagmaCog(commands.Cog):
                     f"tarafindan kontrol ediliyor. Kazanimin "
                     f"%{int(harac_bilgi['oran'] * 100)}'i harac olarak kesildi:\n"
                     + "\n".join(harac_metin)
+                ),
+                inline=False
+            )
+
+        # Uye haraci bilgisi (v0.2.0)
+        if uye_harac_bilgi:
+            uye_harac_metin = []
+            if uye_harac_bilgi['esya']:
+                uye_harac_metin.append(
+                    f"• {uye_harac_bilgi['esya']['item']} "
+                    f"x{uye_harac_bilgi['esya']['amount']}"
+                )
+            if uye_harac_bilgi['para'] > 0:
+                uye_harac_metin.append(
+                    f"• {format_para(uye_harac_bilgi['para'])}"
+                )
+            embed.add_field(
+                name=(f"🏴 Çete Haraç — {uye_harac_bilgi['sev_ad']} "
+                      f"({uye_harac_bilgi['cete_adi']})"),
+                value=(
+                    f"Cetenin belirledigi harac seviyesi geregi kazancinin "
+                    f"%{int(uye_harac_bilgi['oran'] * 100)}'i kasaya kesildi:\n"
+                    + "\n".join(uye_harac_metin)
                 ),
                 inline=False
             )

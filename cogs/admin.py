@@ -767,6 +767,23 @@ class AdminCog(commands.Cog):
 
         await db.approve_gang(gang["id"])
 
+        # FIX (v0.2.0): Sokak Ilk Yardimi perki olan cetelerin LIDERINE de
+        # katilim hediyesi (1x Kirli Sargi) verilir. Eski kodda bu perk
+        # hicbir yerde uygulanmiyordu.
+        if any(
+            p == 'sokak_ilk_yardim'
+            for p in (gang.get('perks') or [])
+        ):
+            try:
+                await db.add_item(gang["leader_id"], "Kirli Sargi", 1)
+                await db.add_action_log(
+                    "envanter", gang["leader_id"], None, "perk_kirli_sargi",
+                    {"cete_id": gang["id"], "perk": "sokak_ilk_yardim",
+                     "kime": "lider"},
+                )
+            except Exception as e:
+                logger.error(f"Lidere Kirli Sargi verilemedi: {e}")
+
         # Lidere çete lideri rolunu ver
         leader = ctx.guild.get_member(gang["leader_id"])
         if leader:

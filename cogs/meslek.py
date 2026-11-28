@@ -190,6 +190,38 @@ class MeslekEylemDropdown(discord.ui.Select):
             await db.update_money(user_id, para_miktar)
             kazanim_metni.append(f"• {format_para(para_miktar)}")
 
+        # ----------------------------------------------------------
+        # UYE BASINA HARAC (v0.2.0 - YENI)
+        # Cete lideri/subay harac seviyesi belirlediyse para kazancindan
+        # yuzde kesilip cetelerin kasasina gider.
+        # ----------------------------------------------------------
+        try:
+            uye_harac = await db.get_member_harac(user_id)
+            if (uye_harac and uye_harac.get('seviye', 0) > 0
+                    and kazanim.get('para', 0) > 0):
+                sev_bilgi = config.HARAC_SEVIYELERI.get(
+                    uye_harac['seviye'], config.HARAC_SEVIYELERI[0]
+                )
+                para_haraci = int(kazanim['para'] * sev_bilgi['oran'])
+                if para_haraci > 0:
+                    await db.update_money(user_id, -para_haraci)
+                    await db.update_gang_money(
+                        uye_harac['gang_id'], para_haraci
+                    )
+                    kazanim_metni.append(
+                        f"🏴 Çete haracı ({sev_bilgi['ad']}): "
+                        f"-{format_para(para_haraci)} → "
+                        f"**{uye_harac['gang_name']}** kasasına"
+                    )
+                    await db.add_action_log(
+                        'cete_harac', user_id, None, 'uye_haraci',
+                        {'kaynak': 'meslek', 'para': para_haraci,
+                         'cete_id': uye_harac['gang_id'],
+                         'seviye': uye_harac['seviye']}
+                    )
+        except Exception as e:
+            logger.error(f"meslek uye haraci kesiminde hata: {e}")
+
         # Cooldown baslat
         await db.set_cooldown(user_id, 'meslek')
 

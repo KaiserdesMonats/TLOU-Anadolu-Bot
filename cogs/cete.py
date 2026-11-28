@@ -1,9 +1,9 @@
 """
 cogs/cete.py - Çete (Fraksiyon) Sistemi
 Komutlar: /cete-kur, /cete-bilgi, /cete-kasa, /cete-yatir, /cete-cek,
-          /cete-davet, /cete-kabul, /cete-ayril, /cete-bolge-al,
-          /cete-baskin, /cete-perkler
-Onay bekleyen çete kurulumları admin cog'ından onaylanır.
+          /cete-davet, /cete-ayril, /cete-bolge-al, /cete-baskin,
+          /cete-perkler, /cete-harac, /cete-harac-ayarla (v0.2.0)
+Onay bekleyen çete kurulumları admin cog'undan onaylanır.
 """
 import logging
 import json
@@ -29,6 +29,25 @@ from utils.localization import (
 
 
 logger = logging.getLogger("tlo.cogs.cete")
+
+
+def kan_bagi_hesapla(gang_data: dict) -> int:
+    """Çetenin yeni üyelerden alacağı kan bağışını hesaplar.
+    FIX (v0.2.0): 'Sadakat Bağı' perki (kan bağışı %20 düşük) eski kodda
+    hiç uygulanmıyordu; her çeteden 100 🪙 alınıyordu. Artık perke göre
+    80 🪙 hesaplanır ve aynı tutar davet metninde + kesimde kullanılır.
+    """
+    ucret = config.CETE_KAN_BAGI_PARA
+    perks = gang_data.get('perks') if isinstance(gang_data, dict) else None
+    if isinstance(perks, list) and 'sadakat_bagi' in perks:
+        ucret = max(1, int(ucret * 0.8))
+    return ucret
+
+
+def sokak_ilk_yardim_var(gang_data: dict) -> bool:
+    """Çetenin 'Sokak İlk Yardımı' perki var mı?"""
+    perks = gang_data.get('perks') if isinstance(gang_data, dict) else None
+    return isinstance(perks, list) and 'sokak_ilk_yardim' in perks
 
 
 # ==================================================================
@@ -705,26 +724,41 @@ class CeteCog(commands.Cog):
             return
 
         # Davet gonder
+        # FIX (v0.2.0): Davet mesaji eskiden ephemeral (gizli) gidiyordu;
+        # slash komutta sadece davet EDEN kisi goruyordu, hedef butonlari
+        # tiklayamiyordu. Artik herkese acik gonderilir.
         view = CeteDavetView(hedef, ctx.author, gang_data['name'])
+
+        # Kan bagisini perk'e gore hesapla (Sadakat Bagi: %20 dusuk)
+        kan_bagi = kan_bagi_hesapla(gang_data)
+
+        perk_hediye_metni = ""
+        if sokak_ilk_yardim_var(gang_data):
+            perk_hediye_metni = (
+                "\n🎁 Bu çete **Sokak İlk Yardımı** perkine sahip: "
+                "katılınca envanterine 1x **Kirli Sargi** hediye edilir!"
+            )
+
         embed = discord.Embed(
             title="📨 Çete Daveti",
             description=(
                 f"{hedef.mention}, **{gang_data['name']}** "
                 f"({gang_data['type']}) cetesi tarafindan davet edildin!\n"
                 f"**Davetci:** {ctx.author.mention}\n\n"
-                f"Kabul edersen **{config.CETE_KAN_BAGI_PARA} 🪙** kan bagisi "
-                f"odemen gerekir."
+                f"Kabul edersen **{kan_bagi} 🪙** kan bagisi odemen gerekir."
+                f"{perk_hediye_metni}"
             ),
             color=config.RENK_CETE
         )
         embed.set_footer(text="120 saniye icinde yanit ver.")
-        await self._send(ctx, content=hedef.mention, embed=embed, view=view)
+        await self._send(ctx, content=hedef.mention, embed=embed, view=view,
+                         ephemeral=False)
 
         # Bekle
         await view.wait()
 
         if view.sonuc != 'kabul':
-            await self._send(ctx, 
+            await self._send(ctx, ephemeral=False,
                 embed=embeds.warning_embed(
                     "Davet Reddedildi",
                     f"{hedef.mention} daveti reddetti veya yanit vermedi."
@@ -732,53 +766,115 @@ class CeteCog(commands.Cog):
             )
             return
 
-        # Kabul etti - kan bagisi kontrol
-        if hedef_data['para'] < config.CETE_KAN_BAGI_PARA:
-            await self._send(ctx, 
-                embed=embeds.error_embed(
-                    "Kan Bagisi Yetersiz",
-                    MSG_CETE_KAN_BAGISI_YETERSIZ.format(
-                        ucret=config.CETE_KAN_BAGI_PARA
+        # ----------------------------------------------------------
+        # KABUL AKISI (v0.2.0 yeniden yazildi)
+        # FIX ('hata veriyor ama katiliyor'): Eski akista uyelik DB'ye
+        # yazildiktan SONRA para/rol/log adimlarindan biri hata atinca
+        # Discord'da 'komut calistirilirken hata olustu' gorunuyordu ama
+        # uyelik zaten kayitliydi. Artik DB islemleri tek guvenli blokta,
+        # Discord tarafindaki islemler (rol) ayri ve kozmetik olarak
+        # calisir; bir adim patlasa bile yanlis hata mesaji cikmaz.
+        # ----------------------------------------------------------
+        try:
+            # Guncel bakiyeyi tazele (davet bekleme suresinde degismis olabilir)
+            hedef_data = await db.get_user(hedef.id)
+            if not hedef_data:
+                await self._send(ctx, ephemeral=False,
+                    embed=embeds.error_embed(
+                        "Hata",
+                        f"{hedef.mention} arada kayit disi kaldigi icin "
+                        f"davet iptal edildi."
                     )
+                )
+                return
+
+            # 1) Kan bagisi kontrol
+            if hedef_data.get('para', 0) < kan_bagi:
+                await self._send(ctx, ephemeral=False,
+                    embed=embeds.error_embed(
+                        "Kan Bagisi Yetersiz",
+                        MSG_CETE_KAN_BAGISI_YETERSIZ.format(ucret=kan_bagi)
+                    )
+                )
+                return
+
+            # 2) Uyeligi yaz (asil islem)
+            eklendi = await db.add_gang_member(
+                kullanici_cetesi['gang_id'], hedef.id
+            )
+            if not eklendi:
+                await self._send_error(ctx,
+                    f"{hedef.mention} eklenemedi (zaten uye olabilir).")
+                return
+
+            # 3) Kan bagisini kes (perk'e gore dogru tutar)
+            if kan_bagi > 0:
+                await db.update_money(hedef.id, -kan_bagi)
+                await db.update_gang_money(
+                    kullanici_cetesi['gang_id'], kan_bagi
+                )
+
+            # 4) Sokak Ilk Yardimi perki: yeni uyeje 1 Kirli Sargi
+            #    (FIX (v0.2.0): bu perk eski kodda hic uygulanmiyordu.)
+            sargi_hediye = False
+            if sokak_ilk_yardim_var(gang_data):
+                try:
+                    await db.add_item(hedef.id, "Kirli Sargi", 1)
+                    sargi_hediye = True
+                    await db.add_action_log(
+                        'envanter', hedef.id, None, 'perk_kirli_sargi',
+                        {'cete_id': kullanici_cetesi['gang_id'],
+                         'perk': 'sokak_ilk_yardim'}
+                    )
+                except Exception as e:
+                    logger.error(f"Kirli Sargi perki verilemedi: {e}")
+
+            # 5) Log
+            try:
+                await db.add_action_log(
+                    'cete_kasa', hedef.id, None, 'kan_bagisi',
+                    {'cete_id': kullanici_cetesi['gang_id'],
+                     'para': kan_bagi}
+                )
+            except Exception as e:
+                logger.error(f"kan_bagisi log hatasi: {e}")
+
+            # 6) Basari mesaji
+            basari_metni = MSG_CETE_KABUL_EDILDI.format(ucret=kan_bagi)
+            if sargi_hediye:
+                basari_metni += (
+                    "\n🎁 Sokak İlk Yardımı perki: envanterine "
+                    "1x **Kirli Sargi** eklendi!"
+                )
+            await self._send(ctx, ephemeral=False,
+                embed=embeds.success_embed("Çeteye Katıldı", basari_metni)
+            )
+        except Exception as e:
+            logger.error(f"cete-davet kabul akisi hatasi: {e}", exc_info=True)
+            await self._send(ctx, ephemeral=False,
+                embed=embeds.error_embed(
+                    "Hata",
+                    "Katilim sirasinda beklenmeyen bir hata olustu. "
+                    "Uyelik durumu icin /cete-bilgi komutunu kullan."
                 )
             )
             return
 
-        # Cete uyesi ekle
-        eklendi = await db.add_gang_member(
-            kullanici_cetesi['gang_id'], hedef.id
-        )
-        if not eklendi:
-            await self._send_error(ctx,
-                f"{hedef.mention} eklenemedi (zaten uye olabilir).")
-            return
-
-        # Kan bagisi kes
-        await db.update_money(hedef.id, -config.CETE_KAN_BAGI_PARA)
-        await db.update_gang_money(
-            kullanici_cetesi['gang_id'], config.CETE_KAN_BAGI_PARA
-        )
-
-        # Hedefe cete rolunu ver
-        uye_rol_id = config.CETE_UYE_ROLLERI.get(gang_data['type'])
-        if uye_rol_id:
-            uye_rol = ctx.guild.get_role(uye_rol_id)
-            if uye_rol and uye_rol not in hedef.roles:
-                try:
-                    await hedef.add_roles(uye_rol, reason="Çete uyeligi")
-                except discord.Forbidden:
-                    pass
-
-        # Log
-        await db.add_action_log('cete_kasa', hedef.id, None,
-                                 'kan_bagisi',
-                                 {'cete_id': kullanici_cetesi['gang_id'],
-                                  'para': config.CETE_KAN_BAGI_PARA})
-
-        await self._send(ctx, embed=embeds.success_embed(
-            "Çeteye Katildi",
-            MSG_CETE_KABUL_EDILDI.format(ucret=config.CETE_KAN_BAGI_PARA)
-        ))
+        # 7) Discord rolleri (DB disi kozmetik adim - hata uyeligi bozmaz)
+        try:
+            if ctx.guild:
+                uye_rol_id = config.CETE_UYE_ROLLERI.get(gang_data['type'])
+                if uye_rol_id:
+                    uye_rol = ctx.guild.get_role(uye_rol_id)
+                    if uye_rol:
+                        try:
+                            await hedef.add_roles(uye_rol, reason="Çete uyeligi")
+                        except discord.Forbidden:
+                            logger.warning(
+                                f"Cete rolu verilemedi (Forbidden): {hedef.id}"
+                            )
+        except Exception as e:
+            logger.error(f"Cete rolu verilirken hata: {e}")
 
     # ==================================================================
     # /cete-ayril
@@ -861,34 +957,233 @@ class CeteCog(commands.Cog):
             )
             return
 
-        # Bolge zaten birinin mi?
-        existing_owner = await db.get_territory_owner(ctx.channel.id)
+        # ----------------------------------------------------------
+        # FIX (v0.2.0 - 'Istanbul bana bolge veriyor'): Eski kod SADECE
+        # tek kanali kontrol ediyordu; ayni sehir kategorisindeki baska
+        # bir kanal baska bir ceteye ait olsa bile bos gorunen kanal
+        # alinabiliyordu. Bolge (sehir) = kategori olarak dusunulur;
+        # kategorideki TUM kanallar taranir.
+        # ----------------------------------------------------------
+        kategori = None
+        if ctx.guild and kategori_id:
+            kategori = ctx.guild.get_category(kategori_id)
+        kategori_adi = kategori.name if kategori else "Bolge"
+
+        if kategori:
+            bolge_kanallari = [c.id for c in kategori.text_channels]
+        else:
+            bolge_kanallari = []
+        if ctx.channel.id not in bolge_kanallari:
+            bolge_kanallari.append(ctx.channel.id)
+
+        # Kategorideki herhangi bir kanal bir ceteye ait mi?
+        existing_owner = await db.get_territory_owner_among(bolge_kanallari)
         if existing_owner:
             if existing_owner['gang_id'] == kullanici_cetesi['gang_id']:
                 await self._send_error(ctx,
-                    "Bu bolge zaten sizin cetenizin kontrolunde."
+                    f"**{kategori_adi}** bolgesi zaten sizin cetenizin kontrolunde."
                 )
                 return
             await self._send_error(ctx,
-                f"Bu bolge zaten **{existing_owner['name']}** cetesi tarafindan kontrol ediliyor. "
-                f"Bolgeyi almak icin baskin yapmalisiniz."
+                f"**{kategori_adi}** bolgesi zaten **{existing_owner['name']}** "
+                f"cetesi tarafindan kontrol ediliyor "
+                f"({existing_owner['name']} > <#{existing_owner['channel_id']}>). "
+                f"Bolgeyi almak icin `/cete-baskin` yapmalisiniz."
             )
             return
 
-        # Bolgeyi al
+        # Bolgeyi al (kanal bazli kayit korunur; baskin/harac sistemi bu
+        # tablo uzerinden calisir)
         await db.set_territory_owner(ctx.channel.id, kullanici_cetesi['gang_id'])
 
         # Kanal basligini guncelle
+        # FIX (v0.2.0): Eskiden Forbidden sessizce yutuluyordu; kontrol DB'ye
+        # yaziliyordu ama kanal basligi eski kaldigi icin oyuncular 'bolge
+        # gercekte bizim degil' diyordu. Artik kullaniciya net uyari verilir.
+        topic_uyari = ""
         try:
-            new_topic = f"🏴 Kontrol: {gang_data['name'] if (gang_data := await db.get_gang_by_id(kullanici_cetesi['gang_id'])) else '?'}"
+            gang = await db.get_gang_by_id(kullanici_cetesi['gang_id'])
+            new_topic = (f"🏴 Kontrol: {gang['name'] if gang else '?'} "
+                         f"({kategori_adi})")
             await kanal.edit(topic=new_topic)
         except discord.Forbidden:
-            pass
+            topic_uyari = (
+                "\n⚠️ Kanal basligi guncellenemedi: botun **Kanal Yönetimi** "
+                "izni yok. Kontrol yine de kayitlara islendi; izni acarsan "
+                "baskanlik bir sonraki alima guncellenir."
+            )
+            logger.warning(f"Kanal topic guncellenemedi (Forbidden): {ctx.channel.id}")
+        except Exception as e:
+            topic_uyari = "\n⚠️ Kanal basligi guncellenemedi (ayrinti loglarda)."
+            logger.error(f"Kanal topic guncellenemedi: {e}")
 
         await self._send(ctx, embed=embeds.success_embed(
             "Bolge Alindi",
-            f"**{ctx.channel.mention}** bolgesi cetenizin kontrolune gecti.\n"
-            f"Bu bolgede yagma/arastirma yapan rakip oyunculardan harac kesilebilir."
+            f"**{kategori_adi}** > {ctx.channel.mention} bolgesi cetenizin "
+            f"kontrolune gecti.\n"
+            f"Bu bolgede yagma/arastirma yapan rakip oyunculardan harac "
+            f"kesilebilir."
+            f"{topic_uyari}"
+        ))
+
+    # ==================================================================
+    # /cete-harac (v0.2.0 - YENI)
+    # ==================================================================
+    @commands.hybrid_command(
+        name="cete-harac",
+        description="Çete üyelerinin haraç seviyelerini gösterir"
+    )
+    async def cete_harac_slash(self, ctx: commands.Context):
+        """Çete üyelerinin haraç seviyelerini listeler."""
+        user_data = await db.get_user(ctx.author.id)
+        if not user_data:
+            await self._send_error(ctx, MSG_KULLANICI_YOK)
+            return
+
+        kullanici_cetesi = await db.get_user_gang(ctx.author.id)
+        if not kullanici_cetesi:
+            await self._send_error(ctx, "Bir ceteye uye degilsin.")
+            return
+
+        uyeler = await db.get_gang_harac_listesi(kullanici_cetesi['gang_id'])
+
+        embed = discord.Embed(
+            title=f"🏴 Haraç Seviyeleri - {kullanici_cetesi['name']}",
+            description=(
+                "Her üyenin kazancından çete kasasına kesilen haraç oranı.\n"
+                "Lider/Subay `/cete-harac-ayarla` ile seviye değiştirebilir."
+            ),
+            color=config.RENK_CETE
+        )
+
+        rol_emoji = {"lider": "👑", "subay": "⚔️", "uye": "👤"}
+        satirlar = []
+        for m in uyeler:
+            sev_bilgi = config.HARAC_SEVIYELERI.get(
+                m.get('harac_seviye', 0), config.HARAC_SEVIYELERI[0]
+            )
+            isim = f"{m.get('isim', '?')} {m.get('soyisim', '')}".strip()
+            satirlar.append(
+                f"{rol_emoji.get(m.get('role'), '👤')} **{isim}** — "
+                f"{sev_bilgi['emoji']} {sev_bilgi['ad']} "
+                f"(kazancın %{int(sev_bilgi['oran'] * 100)}'i)"
+            )
+
+        if satirlar:
+            # Discord field siniri: parcalara bol (max ~900 karakter/field)
+            yarinca = []
+            suanki = []
+            uzunluk = 0
+            for s in satirlar:
+                if uzunluk + len(s) > 900:
+                    yarinca.append(suanki)
+                    suanki = []
+                    uzunluk = 0
+                suanki.append(s)
+                uzunluk += len(s) + 1
+            if suanki:
+                yarinca.append(suanki)
+
+            for idx, parca in enumerate(yarinca[:5]):
+                embed.add_field(
+                    name="👥 Üyeler" if idx == 0 else "👥 Üyeler (devam)",
+                    value="\n".join(parca),
+                    inline=False
+                )
+        else:
+            embed.add_field(name="👥 Üyeler", value="*Üye yok*", inline=False)
+
+        embed.set_footer(text="Haraç: /yagma, /arastir, /enfekte-temizle ve "
+                              "meslek kazançlarından kesilir.")
+        await self._send(ctx, embed=embed)
+
+    # ==================================================================
+    # /cete-harac-ayarla (v0.2.0 - YENI)
+    # ==================================================================
+    @commands.hybrid_command(
+        name="cete-harac-ayarla",
+        description="Bir üyenin haraç seviyesini ayarlar (lider/subay)"
+    )
+    @app_commands.describe(
+        hedef="Haraç seviyesi ayarlanacak çete üyesi",
+        seviye="Haraç seviyesi: 0 yok, 1 düşük (%5), 2 orta (%10), 3 yüksek (%15)"
+    )
+    @app_commands.choices(seviye=[
+        app_commands.Choice(name="0 - Haraç Yok", value=0),
+        app_commands.Choice(name="1 - Düşük (%5)", value=1),
+        app_commands.Choice(name="2 - Orta (%10)", value=2),
+        app_commands.Choice(name="3 - Yüksek (%15)", value=3),
+    ])
+    async def cete_harac_ayarla_slash(self, ctx: commands.Context,
+                                       hedef: discord.Member,
+                                       seviye: app_commands.Choice[int]):
+        """Üye başına haraç seviyesi ayarlar.
+
+        Seçilen seviyeye göre üyenin /yagma, /arastir, /enfekte-temizle
+        ve meslek kazançlarından yüzde kesilip çete kasasına gider.
+        """
+        user_data = await db.get_user(ctx.author.id)
+        if not user_data:
+            await self._send_error(ctx, MSG_KULLANICI_YOK)
+            return
+
+        kullanici_cetesi = await db.get_user_gang(ctx.author.id)
+        if not kullanici_cetesi:
+            await self._send_error(ctx, "Bir ceteye uye degilsin.")
+            return
+
+        # Yetki kontrol (lider veya subay)
+        if kullanici_cetesi.get('role') not in ('lider', 'subay'):
+            await self._send_error(ctx,
+                "Sadece lider ve subaylar haraç seviyesi ayarlayabilir."
+            )
+            return
+
+        if hedef.id == ctx.author.id:
+            await self._send_error(ctx,
+                "Kendi haraç seviyeni değiştiremezsin (başka bir subay ayarlar)."
+            )
+            return
+
+        # Hybrid komutlarda Choice yerine string de gelebilir (prefix)
+        seviye_degeri = seviye.value if hasattr(seviye, 'value') else int(seviye)
+        if seviye_degeri not in config.HARAC_SEVIYELERI:
+            await self._send_error(ctx,
+                "Geçersiz seviye. 0-3 arası bir seviye seçin.")
+            return
+
+        # Hedef bu çetede mi?
+        hedef_harac = await db.get_member_harac(hedef.id)
+        if not hedef_harac or hedef_harac['gang_id'] != kullanici_cetesi['gang_id']:
+            await self._send_error(ctx,
+                f"{hedef.mention} sizin çetenizin üyesi değil."
+            )
+            return
+
+        basarili = await db.set_member_harac(
+            kullanici_cetesi['gang_id'], hedef.id, seviye_degeri
+        )
+        if not basarili:
+            await self._send_error(ctx,
+                "Haraç seviyesi güncellenemedi (üye bulunamadı)."
+            )
+            return
+
+        sev_bilgi = config.HARAC_SEVIYELERI[seviye_degeri]
+
+        await db.add_action_log(
+            'cete_harac', ctx.author.id, hedef.id, 'seviye_ayarla',
+            {'cete_id': kullanici_cetesi['gang_id'],
+             'hedef': hedef.id, 'yeni_seviye': seviye_degeri}
+        )
+
+        await self._send(ctx, embed=embeds.success_embed(
+            "Haraç Seviyesi Güncellendi",
+            f"{hedef.mention} için yeni haraç seviyesi: "
+            f"{sev_bilgi['emoji']} **{sev_bilgi['ad']}** "
+            f"(kazancın %{int(sev_bilgi['oran'] * 100)}'i kasaya gider).\n\n"
+            f"Kesim şu kazançlarda uygulanır: `/yagma`, `/arastir`, "
+            f"`/enfekte-temizle`, `/meslek`."
         ))
 
     # ==================================================================

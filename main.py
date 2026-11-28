@@ -66,6 +66,7 @@ class TLOUBot(commands.Bot):
             "cogs.uretim",
             "cogs.enfeksiyon",
             "cogs.cete",
+            "cogs.takas",     # v0.2.0: oyuncular arasi takas
             "cogs.event",
             "cogs.admin",
             "cogs.hava_durumu",

@@ -39,7 +39,21 @@ KOMUT_KATEGORILERI = {
         "komutlar": [
             ("/profil [@kullanici]", "Karakter profil kartini gosterir", "Herkes"),
             ("/envanter", "Karakter envanterini gosterir", "RP Oyuncusu"),
-            ("/esya-bilgi <esya>", "Esya detaylarini gosterir", "RP Oyuncusu"),
+            (
+                "/esya-bilgi <esya>",
+                "Esya detaylarini gosterir (oneri listesi var)",
+                "RP Oyuncusu",
+            ),
+            (
+                "/kullan <esya> [miktar]",
+                "Tuketilebilir esya kullan (yemek/icecek/sargi)",
+                "RP Oyuncusu",
+            ),
+            (
+                "/takas @hedef <verilecek> <istenen> [miktarlar]",
+                "Oyuncu ile esya takasi teklif et",
+                "RP Oyuncusu",
+            ),
             ("/slot-gelistir", "Envanter slot kapasitesini artirir", "RP Oyuncusu"),
         ],
     },
@@ -97,6 +111,16 @@ KOMUT_KATEGORILERI = {
             ("/cete-davet @hedef", "Çeteye üye davet et", "Lider/Subay"),
             ("/cete-ayril", "Çeteden ayril (lider hariç)", "Çete üyesi"),
             ("/cete-bolge-al", "Bulundugun bolgeyi kontrol altina al", "Lider/Subay"),
+            (
+                "/cete-harac",
+                "Uyelerin harac seviyelerini goster",
+                "Çete üyesi",
+            ),
+            (
+                "/cete-harac-ayarla @uye <0-3>",
+                "Uyenin harac seviyesini ayarla",
+                "Lider/Subay",
+            ),
             ("/cete-baskin <cete> <kanal>", "Baskın ilan et", "Lider"),
             ("/cete-perkler", "Tüm yetenekleri listele", "Herkes"),
         ],

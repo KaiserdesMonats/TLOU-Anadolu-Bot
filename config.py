@@ -86,6 +86,15 @@ HARAC_MIN_ORAN = 0.10            # En az %10
 HARAC_MAX_ORAN = 0.15            # En fazla %15
 HARAC_SABIT_PARA = 50            # veya sabit 50 🪙
 
+# Üye başına haraç seviyesi (lider/subay /cete-harac-ayarla ile ayarlar)
+# seviye -> {ad: gorunen ad, oran: kazancdan kesilecek pay}
+HARAC_SEVIYELERI = {
+    0: {"ad": "Haraç Yok",     "oran": 0.00, "emoji": "🕊️"},
+    1: {"ad": "Düşük Haraç",   "oran": 0.05, "emoji": "🪙"},
+    2: {"ad": "Orta Haraç",    "oran": 0.10, "emoji": "💰"},
+    3: {"ad": "Yüksek Haraç",  "oran": 0.15, "emoji": "🏴"},
+}
+
 # Yankesicilik
 YANKESICILIK_BASARI_ORANI = 0.50  # %50 başarı şansı
 
@@ -391,4 +400,4 @@ BOT_DURUM_METNI = "TLOU Anadolu'yu izliyor 👁️"
 BOT_DURUM_TIPI  = "watching"  # watching / playing / listening
 
 # Versiyon
-BOT_VERSIYON = "0.1.1"
+BOT_VERSIYON = "0.2.0"

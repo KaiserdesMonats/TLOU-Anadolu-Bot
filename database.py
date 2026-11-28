@@ -115,6 +115,7 @@ class Database:
                     user_id   INTEGER NOT NULL UNIQUE,
                     role      TEXT DEFAULT 'uye',
                     join_date TEXT,
+                    harac_seviye INTEGER DEFAULT 0,
                     FOREIGN KEY(gang_id) REFERENCES gangs(id),
                     FOREIGN KEY(user_id) REFERENCES users(user_id)
                 );
@@ -211,6 +212,17 @@ class Database:
                 );
             ''')
             await self._conn.commit()
+
+            # Eski veritabanlarina yeni kolon ekle (hata normalse zaten var).
+            # v0.2.0: gang_members.harac_seviye (uye basina harac sistemi)
+            try:
+                await self._conn.execute(
+                    "ALTER TABLE gang_members ADD COLUMN harac_seviye INTEGER DEFAULT 0"
+                )
+                await self._conn.commit()
+                logger.info("gang_members.harac_seviye kolonu eklendi.")
+            except Exception:
+                pass  # Kolon zaten var
 
     # ==================================================================
     # KAYIT / USER YONETIMI
@@ -784,6 +796,62 @@ class Database:
             )
             await self._conn.commit()
 
+    # --------------------------------------------------------------
+    # UYE BASINA HARAC SEVIYESI (v0.2.0)
+    # --------------------------------------------------------------
+    async def set_member_harac(self, gang_id: int, user_id: int,
+                               seviye: int) -> bool:
+        """Uyenin harac seviyesini ayarlar. Uye bu cetede degilse False."""
+        async with self._lock:
+            cur = await self._conn.execute(
+                "SELECT gang_id FROM gang_members WHERE user_id=?",
+                (user_id,)
+            )
+            row = await cur.fetchone()
+            if not row or row[0] != gang_id:
+                return False
+            await self._conn.execute(
+                "UPDATE gang_members SET harac_seviye=? WHERE user_id=?",
+                (seviye, user_id)
+            )
+            await self._conn.commit()
+        return True
+
+    async def get_member_harac(self, user_id: int) -> Optional[dict]:
+        """Uyenin harac seviyesi ve cetesi. Uye degilse None.
+        Returns: {seviye, gang_id, gang_name, gang_type, role}
+        """
+        async with self._lock:
+            cur = await self._conn.execute(
+                """SELECT gm.harac_seviye, gm.gang_id, gm.role,
+                          g.name, g.type
+                   FROM gang_members gm
+                   JOIN gangs g ON gm.gang_id = g.id
+                   WHERE gm.user_id=?""",
+                (user_id,)
+            )
+            row = await cur.fetchone()
+        if not row:
+            return None
+        return {"seviye": row[0] or 0, "gang_id": row[1],
+                "role": row[2], "gang_name": row[3], "gang_type": row[4]}
+
+    async def get_gang_harac_listesi(self, gang_id: int) -> list:
+        """Cetedeki tum uyelerin harac seviyeleri."""
+        async with self._lock:
+            cur = await self._conn.execute(
+                """SELECT gm.user_id, gm.role, gm.harac_seviye,
+                          u.isim, u.soyisim
+                   FROM gang_members gm
+                   JOIN users u ON gm.user_id = u.user_id
+                   WHERE gm.gang_id=?
+                   ORDER BY gm.role ASC, gm.harac_seviye DESC""",
+                (gang_id,)
+            )
+            rows = await cur.fetchall()
+        return [{"user_id": r[0], "role": r[1], "harac_seviye": r[2] or 0,
+                 "isim": r[3], "soyisim": r[4]} for r in rows]
+
     async def count_approved_gangs_by_type(self, gang_type: str) -> int:
         async with self._lock:
             cur = await self._conn.execute(
@@ -998,6 +1066,31 @@ class Database:
             )
             rows = await cur.fetchall()
         return [r[0] for r in rows]
+
+    async def get_territory_owner_among(self, channel_ids: list) -> Optional[dict]:
+        """Verilen kanal listesi icinde sahibi olan ilk bolgeyi dondurur.
+        Kategori (sehir) bazli kontrol icin kullanilir: ayni kategorideki
+        herhangi bir kanal baska bir cetede ise bolge baskinla alinabilir.
+        Returns: {gang_id, name, type, channel_id} veya None
+        """
+        if not channel_ids:
+            return None
+        placeholders = ','.join('?' for _ in channel_ids)
+        async with self._lock:
+            cur = await self._conn.execute(
+                f"""SELECT tc.channel_id, tc.gang_id, g.name, g.type
+                    FROM territory_control tc
+                    LEFT JOIN gangs g ON tc.gang_id = g.id
+                    WHERE tc.channel_id IN ({placeholders}) AND tc.locked=0
+                      AND tc.gang_id IS NOT NULL
+                    LIMIT 1""",
+                tuple(channel_ids)
+            )
+            row = await cur.fetchone()
+        if not row:
+            return None
+        return {"channel_id": row[0], "gang_id": row[1],
+                "name": row[2], "type": row[3]}
 
     # ==================================================================
     # BASKINLAR

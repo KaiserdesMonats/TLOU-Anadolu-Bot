@@ -8,6 +8,63 @@ TZ_ISTANBUL = timezone(timedelta(hours=3))
 
 
 # ==================================================================
+# TURKCE TOLERANSLI ESYA ARAMA
+# ==================================================================
+# Kullanicilar esya adlarini Turkce harflerle yazabilir ("Kirli Sargı",
+# "Su Şisesi"...). ITEMS listesi ASCII isimler kullanir. Bu yuzden
+# /esya-bilgi ve /takas'ta "esya bulunamadi" hatalari cikiyordu.
+# Arama yaptigimiz ismi de normalizasyondan gecirip karsilastiriyoruz.
+_TR_KARAKTER_MAP = str.maketrans({
+    'ı': 'i', 'İ': 'i', 'I': 'i',
+    'ş': 's', 'Ş': 's',
+    'ğ': 'g', 'Ğ': 'g',
+    'ü': 'u', 'Ü': 'u',
+    'ö': 'o', 'Ö': 'o',
+    'ç': 'c', 'Ç': 'c',
+})
+
+
+def esya_isim_normalize(isim: str) -> str:
+    """Esya adini karsilastirma icin normalize eder.
+    Turkce karakterleri ASCII'ye cevirir, kucuk harfe alir,
+    fazla bosluklari temizler.
+    Ornek: 'Kirli Sargı' -> 'kirli sargi'
+    """
+    if not isim:
+        return ''
+    duz = str(isim).translate(_TR_KARAKTER_MAP).lower()
+    return ' '.join(duz.split())
+
+
+def esya_bul(arama: str):
+    """ITEMS listesinde esya arar (Turkce toleransli, tam eslesme).
+    Bulursa (orijinal_isim, detay_dict) dondurur, bulamazsa None.
+    """
+    hedef = esya_isim_normalize(arama)
+    if not hedef:
+        return None
+    for isim, detay in ITEMS.items():
+        if esya_isim_normalize(isim) == hedef:
+            return (isim, detay)
+    return None
+
+
+def esya_onerileri(current: str, limit: int = 25) -> list:
+    """Autocomplete icin ITEMS isimlerinden oneri listesi uretir.
+    Hem dogrudan hem normalize edilmis metinde arar.
+    """
+    current_norm = esya_isim_normalize(current)
+    choices = []
+    for name in ITEMS.keys():
+        name_norm = esya_isim_normalize(name)
+        if not current_norm or current_norm in name_norm:
+            choices.append(name)
+        if len(choices) >= limit:
+            break
+    return choices
+
+
+# ==================================================================
 # ESYA LISTESI (envanter icin)
 # ==================================================================
 # Kategori: {esya_adi: aciklama}
@@ -319,7 +376,7 @@ EVENT_KARGO_ICERIK = [
     {"item": "Antibiyotik", "miktar": 2},
     {"item": "9mm Mermi", "miktar": 10},
     {"item": "Temizlenmis Su", "miktar": 5},
-    {"item": "Temiz Sargı", "miktar": 3},
+    {"item": "Temiz Sargi", "miktar": 3},
     {"item": "Vitamin", "miktar": 3},
 ]
 
